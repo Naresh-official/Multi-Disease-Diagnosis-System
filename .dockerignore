@@ -7,4 +7,4 @@ __pycache__/
 *.md
 LICENSE
 render.yaml
-.streamlit/
+runtime.txt
