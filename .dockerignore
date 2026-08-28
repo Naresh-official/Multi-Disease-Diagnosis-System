@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.venv
+*.md
+LICENSE
+render.yaml
+.streamlit/

@@ -3,8 +3,6 @@
 # 🧬 Explainable Multi-Disease Diagnosis System
 ### Gene Expression–Based Disease Prediction using Hybrid Swarm Intelligence (PSO + ACO) and Deep Learning
 
-<img src="../Screenshot.png" alt="Application Screenshot" width="800"/>
-
 </div>
 
 ---
@@ -14,12 +12,14 @@
 This project provides an end-to-end clinical decision-support application for multi-disease diagnosis based on high-dimensional gene expression profiles (microarray data). It integrates a multi-stage feature selection pipeline combining **Variance Filtering**, **Particle Swarm Optimization (PSO)**, and **Ant Colony Optimization (ACO)** with a **Deep Neural Network (DNN)** and **Explainable AI (XAI)** interpretability engines (**SHAP** & **LIME**).
 
 ### 🎯 Target Diseases
-| Class ID | Disease | GEO Dataset Reference |
-| :--- | :--- | :--- |
-| **0** | **Coronary Artery Disease (CAD)** | GSE66360 |
-| **1** | **Autoimmune Disease** | GSE50772 |
-| **2** | **Alzheimer's Disease** | GSE48350 |
-| **3** | **Parkinson's Disease** | GSE6613 |
+| Class ID | Disease | GEO Dataset | Samples |
+| :--- | :--- | :--- | :--- |
+| **0** | **Coronary Artery Disease (CAD)** | GSE66360 | 99 |
+| **1** | **Autoimmune Disease** | GSE50772 | 81 |
+| **2** | **Alzheimer's Disease** | GSE48350 | 253 |
+| **3** | **Parkinson's Disease** | GSE6613 | 50 |
+
+**Total training samples:** 483 (after filtering Parkinson's controls)
 
 ---
 
@@ -29,35 +29,38 @@ This project provides an end-to-end clinical decision-support application for mu
 flowchart TD
     A[Patient Gene Expression CSV] --> B[StandardScaler: 10,571 Features]
     B --> C[Variance Threshold Selector]
-    C --> D[PSO Feature Selection: 5,302 Features]
+    C --> D[PSO Feature Selection]
     D --> E[ACO Feature Selection: 80 Optimal Biomarkers]
     E --> F[Deep Learning Classifier DNN]
     F --> G[Multi-Class Softmax Output]
-    G --> H[Disease Class & Confidence %]
-    G --> I[Probability Distribution Table]
+    G --> H[Disease Prediction & Confidence]
+    G --> I[Uncertainty Analysis]
     E --> J[SHAP KernelExplainer]
     E --> K[LIME Tabular Explainer]
-    J --> L[SHAP Global/Local Biomarker Importance Plot]
-    K --> M[LIME Local Feature Contribution Bar Chart]
+    J --> L[SHAP Biomarker Importance]
+    K --> M[LIME Feature Contributions]
+    J --> N[SHAP vs LIME Comparison]
+    K --> N
 ```
 
 ### 1. Data Preprocessing & Hybrid Swarm Feature Selection
-High-dimensional microarray datasets typically have thousands of gene probe features with severe sparsity and redundancy. The application uses a multi-tier reduction strategy:
 1. **StandardScaler (`scaler.pkl`)**: Standardizes 10,571 gene expression probe values.
-2. **Variance Thresholding (`variance_selector.pkl`)**: Filters out zero/low-variance features across patients.
-3. **Particle Swarm Optimization (PSO - `pso_features.pkl`)**: Explores global feature space to reduce dimensions to 5,302 relevant candidate genes.
+2. **Variance Thresholding (`variance_selector.pkl`)**: Filters out zero/low-variance features.
+3. **Particle Swarm Optimization (PSO - `pso_features.pkl`)**: Explores global feature space to reduce dimensions to 500 candidate genes.
 4. **Ant Colony Optimization (ACO - `aco_features.pkl`)**: Fine-tunes selection using pheromone-based heuristic search down to **80 optimal biomarker genes**.
 
 ### 2. Deep Learning Classifier (`hybrid_pso_aco_dl_model.keras`)
 - **Input Dimension**: `(Batch, 80)`
-- **Hidden Layers**:
-  - `Dense(64, activation='relu')` + `Dropout`
-  - `Dense(32, activation='relu')` + `Dropout`
-- **Output Layer**: `Dense(4, activation='softmax')` producing probabilities across all 4 target diseases.
+- **Architecture**:
+  ```
+  Dense(64, relu) → Dropout(0.3) → Dense(32, relu) → Dropout(0.3) → Dense(4, softmax)
+  ```
+- **Output**: 4-class softmax probabilities (CAD, Autoimmune, Alzheimer's, Parkinson's)
 
 ### 3. Explainable AI (XAI) Framework
-- **SHAP (SHapley Additive exPlanations)**: Utilizes a `KernelExplainer` initialized on reference training features (`X_train_fs.npy`) to measure the exact Shapley contribution of the top 10 biomarker genes toward the predicted diagnosis.
-- **LIME (Local Interpretable Model-agnostic Explanations)**: Employs `LimeTabularExplainer` to build local linear surrogate models explaining how specific gene values push the prediction toward or against a disease class.
+- **SHAP**: `KernelExplainer` on reference training features measures Shapley contributions of top biomarkers.
+- **LIME**: `LimeTabularExplainer` builds local linear surrogate models explaining feature contributions.
+- **Comparison**: Automatic SHAP vs LIME comparison with Spearman rank correlation.
 
 ---
 
@@ -65,72 +68,75 @@ High-dimensional microarray datasets typically have thousands of gene probe feat
 
 ```
 gene_disease_app/
-├── app.py                            # Streamlit entry point (landing page)
-├── run.sh                            # One-click startup shell script
+├── app.py                            # Streamlit landing page
+├── run.sh                            # One-click startup script
+├── train_model.py                    # Retraining script (PSO + ACO from scratch)
 ├── requirements.txt                  # Python dependencies
 │
 ├── core/                             # Core prediction logic
-│   ├── __init__.py
 │   ├── config.py                     # Centralised application configuration
 │   ├── pipeline.py                   # Canonical preprocessing pipeline
 │   ├── predictor.py                  # Model loading & prediction (cached)
-│   └── validation.py                 # Input validation
+│   ├── validation.py                 # Input data validation
+│   └── batch_predictor.py            # Batch prediction logic
 │
 ├── explainability/                   # XAI modules
-│   ├── __init__.py
 │   ├── shap_explainer.py             # SHAP KernelExplainer wrapper
 │   ├── lime_explainer.py             # LIME TabularExplainer wrapper
-│   └── comparison.py                 # SHAP vs LIME comparison
+│   └── comparison.py                 # SHAP vs LIME comparison with Spearman ρ
 │
-├── pages/                            # Streamlit multi-page navigation
-│   ├── 1_Diagnosis.py                # Main prediction + explanation page
-│   ├── 2_Model_Performance.py        # (future)
-│   ├── 3_Model_Comparison.py         # (future)
-│   ├── 4_Biomarker_Analysis.py       # (future)
-│   ├── 5_Dataset_Visualization.py    # (future)
-│   ├── 6_Explainability.py           # (future)
-│   └── 7_Batch_Analysis.py           # (future)
+├── pages/                            # Streamlit multi-page app
+│   ├── 1_Diagnosis.py                # Single-sample prediction + XAI + PDF
+│   ├── 2_Model_Performance.py        # Evaluation metrics, ROC, confusion matrix
+│   ├── 3_Model_Comparison.py         # Feature-selection strategy comparison
+│   ├── 4_Biomarker_Analysis.py       # Global & disease-specific biomarker ranking
+│   ├── 5_Dataset_Visualization.py    # PCA, t-SNE, UMAP, heatmap
+│   ├── 6_Explainability.py           # SHAP vs LIME comparison page
+│   └── 7_Batch_Analysis.py           # Multi-sample batch prediction
 │
-├── evaluation/                       # Model evaluation (future)
-│   ├── __init__.py
-│   ├── evaluator.py
-│   ├── metrics.py
-│   ├── plots.py
-│   └── model_comparison.py
+├── evaluation/                       # Model evaluation
+│   ├── evaluator.py                  # GSE data loading + full pipeline evaluation
+│   ├── metrics.py                    # Accuracy, F1, ROC-AUC, per-class metrics
+│   ├── plots.py                      # Plotly confusion matrix, ROC, PR curves
+│   └── model_comparison.py           # Feature-selection strategy experiments
 │
-├── visualization/                    # Data visualisation (future)
-│   ├── __init__.py
-│   ├── pca.py
-│   ├── tsne.py
-│   ├── umap.py
-│   └── heatmap.py
+├── visualization/                    # Data visualisation
+│   ├── data_loader.py                # Load/prepare data for all viz methods
+│   ├── pca.py                        # PCA with explained variance
+│   ├── tsne.py                       # t-SNE with configurable parameters
+│   ├── umap.py                       # UMAP manifold visualization
+│   └── heatmap.py                    # Biomarker expression heatmap
 │
-├── biomarkers/                       # Biomarker analysis (future)
-│   ├── __init__.py
-│   ├── analyzer.py
-│   ├── ranking.py
-│   └── metadata.py
+├── biomarkers/                       # Biomarker analysis
+│   ├── analyzer.py                   # SHAP-based biomarker aggregation
+│   ├── ranking.py                    # Global & disease-specific ranking
+│   └── metadata.py                   # Probe ID information
 │
-├── reports/                          # Report generation (future)
-│   ├── __init__.py
-│   └── pdf_report.py
+├── reports/                          # Report generation
+│   └── pdf_report.py                 # PDF analysis report (ReportLab)
 │
 ├── utils/                            # Shared utilities
-│   ├── __init__.py
 │   ├── constants.py                  # Disease labels, feature counts, paths
-│   └── helpers.py                    # Formatting, DataFrames, feature names
+│   ├── helpers.py                    # Formatting, feature name utilities
+│   └── uncertainty.py                # Entropy, confidence, calibration
 │
 ├── artifacts/                        # Trained model artefacts
-│   ├── hybrid_pso_aco_dl_model.keras
-│   ├── scaler.pkl
-│   ├── variance_selector.pkl
-│   ├── pso_features.pkl
-│   ├── aco_features.pkl
-│   └── X_train_fs.npy
+│   ├── hybrid_pso_aco_dl_model.keras # Trained DNN
+│   ├── scaler.pkl                    # StandardScaler
+│   ├── variance_selector.pkl         # VarianceThreshold
+│   ├── pso_features.pkl              # PSO-selected feature indices (500)
+│   ├── aco_features.pkl              # ACO-selected feature indices (80)
+│   ├── X_train_fs.npy                # Preprocessed training features (386×80)
+│   └── training_info.json            # Training metadata
 │
 ├── data/
 │   ├── sample/                       # Sample patient CSVs for testing
-│   └── evaluation/                   # Evaluation datasets (future)
+│   │   ├── cad_test_sample.csv
+│   │   ├── autoimmune_test_sample.csv
+│   │   ├── alzheimers_test_sample.csv
+│   │   └── parkinsons_test_sample.csv
+│   ├── evaluation/                   # Saved evaluation results
+│   └── visualizations/               # Cached PCA/t-SNE/UMAP coordinates
 │
 └── README.md
 ```
@@ -139,7 +145,7 @@ gene_disease_app/
 
 ## 🔗 How the Prediction Pipeline Works
 
-Every page that needs to make a prediction uses the **same canonical pipeline**:
+Every page that needs predictions uses the **same canonical pipeline**:
 
 ```python
 from core.pipeline import preprocess
@@ -156,22 +162,73 @@ probs = predict(artifacts, x_final)
 pred_class = int(np.argmax(probs))
 ```
 
-This guarantees that **no page duplicates preprocessing or model-loading code**.  The pipeline modules are the single source of truth.
+This guarantees that **no page duplicates preprocessing or model-loading code**.
 
 ---
 
-## 🚀 How to Run the Application
+## 📊 Pages & Features
 
-### Method 1: Using the Automated Run Script (Recommended)
+### 1. 🩺 Diagnosis (`1_Diagnosis.py`)
+- Upload a single gene-expression CSV
+- Input validation with detailed error reporting
+- Disease prediction with confidence level (High/Medium/Low/Very Low)
+- Uncertainty analysis (entropy, probability validation)
+- SHAP and LIME explanations
+- PDF report generation
 
+### 2. 📈 Model Performance (`2_Model_Performance.py`)
+- Accuracy, Precision, Recall, F1, ROC-AUC metrics
+- Confusion matrix (interactive Plotly heatmap)
+- ROC curves and Precision-Recall curves
+- Per-class performance breakdown
+
+### 3. ⚖️ Model Comparison (`3_Model_Comparison.py`)
+- Compares 5 feature-selection strategies:
+  - No selection (10,571 features)
+  - Variance filtering only
+  - PSO only
+  - ACO only
+  - Hybrid PSO + ACO (production)
+- Accuracy, F1, feature count, and reduction percentage charts
+
+### 4. 🧬 Biomarker Analysis (`4_Biomarker_Analysis.py`)
+- Global biomarker ranking by SHAP importance
+- Disease-specific biomarker ranking
+- Top 10/20/30/50/80 selection
+- Positive vs negative SHAP contributions
+- Feature selection journey visualization (10,571 → 80)
+
+### 5. 🔬 Dataset Visualization (`5_Dataset_Visualization.py`)
+- PCA with explained variance ratio
+- t-SNE with configurable perplexity
+- UMAP with configurable neighbors/min_dist
+- Biomarker expression heatmap
+
+### 6. 🔍 Explainability (`6_Explainability.py`)
+- SHAP explanation for predicted disease
+- LIME explanation for predicted disease
+- Side-by-side comparison with Spearman rank correlation
+- Common feature overlap analysis
+
+### 7. 📦 Batch Analysis (`7_Batch_Analysis.py`)
+- Upload multiple CSV files simultaneously
+- Individual file validation (invalid files rejected gracefully)
+- Progress bar during batch processing
+- Results table with all class probabilities
+- CSV export of results
+
+---
+
+## 🚀 How to Run
+
+### Method 1: Automated Script
 ```bash
 cd gene_disease_app
 chmod +x run.sh
 ./run.sh
 ```
 
-### Method 2: Using `uv` (Fastest Setup)
-
+### Method 2: Using `uv`
 ```bash
 cd gene_disease_app
 uv venv --python 3.11 .venv
@@ -179,8 +236,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/streamlit run app.py
 ```
 
-### Method 3: Standard Python Virtual Environment
-
+### Method 3: Standard Python
 ```bash
 cd gene_disease_app
 python3 -m venv .venv
@@ -189,22 +245,39 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-After starting, access the web dashboard: 👉 **`http://localhost:8501`**
+Access at: **`http://localhost:8501`**
 
 ---
 
-## 🧪 Testing with Sample Patient Data
+## 🧪 Testing with Sample Data
 
-Sample CSV files are in `data/sample/`:
-- `alzheimers_test_sample (1).csv` — Alzheimer's sample
-- `autoimmune_test_sample (1).csv` — Autoimmune Disease sample
-- `cad_test_sample (1).csv` — Coronary Artery Disease sample
+Sample CSVs are in `data/sample/`:
 
-### Workflow in UI:
-1. Open `http://localhost:8501`.
-2. Click **Diagnosis** in the sidebar.
-3. Upload any sample CSV.
-4. View: predicted disease, confidence, probability table, SHAP and LIME charts.
+| File | Disease |
+|------|---------|
+| `cad_test_sample.csv` | Coronary Artery Disease |
+| `autoimmune_test_sample.csv` | Autoimmune Disease |
+| `alzheimers_test_sample.csv` | Alzheimer's Disease |
+| `parkinsons_test_sample.csv` | Parkinson's Disease |
+
+---
+
+## 🔧 Retraining the Model
+
+If you need to retrain (e.g., after adding/removing a disease class):
+
+```bash
+.venv/bin/python train_model.py
+```
+
+This will:
+1. Parse all 4 GSE Series Matrix files
+2. Filter Parkinson's to disease samples only (excludes controls)
+3. Apply StandardScaler → VarianceThreshold → SelectKBest
+4. Run PSO feature selection (10,571 → 500)
+5. Run ACO feature selection (500 → 80)
+6. Train the DNN
+7. Save all new artifacts to `artifacts/`
 
 ---
 
@@ -215,3 +288,12 @@ Sample CSV files are in `data/sample/`:
 3. **Need XAI?**: Import from `explainability.shap_explainer` / `explainability.lime_explainer`.
 4. **Need constants?**: Import from `utils.constants` or `core.config`.
 5. **Add new constants**: Edit `utils/constants.py` (single source of truth).
+
+---
+
+## ⚠️ Limitations
+
+- **No independent test set**: Evaluation data overlaps with training data (same GEO Series Matrix files).
+- **Class imbalance**: Alzheimer's has 253 samples vs Parkinson's with 50, which may affect CAD/Parkinson's classification.
+- **No biological gene annotation**: Feature identifiers are Affymetrix probe IDs (e.g., `219170_at`), not gene symbols.
+- **Softmax ≠ clinical probability**: Model outputs are not calibrated clinical confidence scores.

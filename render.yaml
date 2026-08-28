@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gene-disease-diagnosis
+    runtime: image
+    image:
+      url: # Render will build from Dockerfile in repo root
+    plan: standard
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+    disk:
+      name: data-volume
+      mountPath: /app/data
+      sizeGB: 2
