@@ -1,0 +1,77 @@
+{
+  "disease_slug": "cad",
+  "disease_name": "Coronary Artery Disease / AMI",
+  "study": "GSE66360",
+  "total_samples": 97,
+  "train_samples": 67,
+  "test_samples": 30,
+  "train_split_percentage": 69.07,
+  "test_split_percentage": 30.93,
+  "total_probe_features": 54675,
+  "selected_biomarker_count": 30,
+  "selected_classifier": "RandomForestClassifier",
+  "test_accuracy": 0.8667,
+  "test_macro_f1": 0.8643,
+  "test_balanced_accuracy": 0.8667,
+  "test_precision": 0.8947,
+  "test_recall": 0.8667,
+  "confusion_matrix": [
+    [
+      15,
+      0
+    ],
+    [
+      4,
+      11
+    ]
+  ],
+  "classification_report": {
+    "Control": {
+      "precision": 0.7894736842105263,
+      "recall": 1.0,
+      "f1-score": 0.8823529411764706,
+      "support": 15.0
+    },
+    "Disease": {
+      "precision": 1.0,
+      "recall": 0.7333333333333333,
+      "f1-score": 0.8461538461538461,
+      "support": 15.0
+    },
+    "accuracy": 0.8666666666666667,
+    "macro avg": {
+      "precision": 0.8947368421052632,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.8642533936651584,
+      "support": 30.0
+    },
+    "weighted avg": {
+      "precision": 0.8947368421052633,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.8642533936651584,
+      "support": 30.0
+    }
+  },
+  "top_biomarkers": [
+    "1555167_s_at",
+    "1568830_at",
+    "203574_at",
+    "203887_s_at",
+    "203888_at",
+    "204621_s_at",
+    "204622_x_at",
+    "205403_at",
+    "205863_at",
+    "208868_s_at",
+    "208869_s_at",
+    "209774_x_at",
+    "210146_x_at",
+    "210423_s_at",
+    "210845_s_at",
+    "211372_s_at",
+    "211924_s_at",
+    "213638_at",
+    "216015_s_at",
+    "216248_s_at"
+  ]
+}

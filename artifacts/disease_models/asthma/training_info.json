@@ -1,0 +1,77 @@
+{
+  "disease_slug": "asthma",
+  "disease_name": "Asthma",
+  "study": "GSE69683",
+  "total_samples": 496,
+  "train_samples": 346,
+  "test_samples": 150,
+  "train_split_percentage": 69.76,
+  "test_split_percentage": 30.24,
+  "total_probe_features": 54715,
+  "selected_biomarker_count": 100,
+  "selected_classifier": "LogisticRegression",
+  "test_accuracy": 0.8267,
+  "test_macro_f1": 0.6401,
+  "test_balanced_accuracy": 0.6197,
+  "test_precision": 0.6963,
+  "test_recall": 0.6197,
+  "confusion_matrix": [
+    [
+      8,
+      19
+    ],
+    [
+      7,
+      116
+    ]
+  ],
+  "classification_report": {
+    "Control": {
+      "precision": 0.5333333333333333,
+      "recall": 0.2962962962962963,
+      "f1-score": 0.38095238095238093,
+      "support": 27.0
+    },
+    "Disease": {
+      "precision": 0.8592592592592593,
+      "recall": 0.943089430894309,
+      "f1-score": 0.8992248062015504,
+      "support": 123.0
+    },
+    "accuracy": 0.8266666666666667,
+    "macro avg": {
+      "precision": 0.6962962962962963,
+      "recall": 0.6196928635953026,
+      "f1-score": 0.6400885935769657,
+      "support": 150.0
+    },
+    "weighted avg": {
+      "precision": 0.8005925925925926,
+      "recall": 0.8266666666666667,
+      "f1-score": 0.8059357696566999,
+      "support": 150.0
+    }
+  },
+  "top_biomarkers": [
+    "1552343_PM_s_at",
+    "1554769_PM_at",
+    "1554770_PM_x_at",
+    "1555947_PM_at",
+    "1556567_PM_at",
+    "1556818_PM_at",
+    "1556963_PM_at",
+    "1557502_PM_at",
+    "1564121_PM_at",
+    "1565818_PM_s_at",
+    "1566342_PM_at",
+    "1567044_PM_s_at",
+    "1567045_PM_at",
+    "200625_PM_s_at",
+    "201088_PM_at",
+    "201172_PM_x_at",
+    "201319_PM_at",
+    "201606_PM_s_at",
+    "201963_PM_at",
+    "202031_PM_s_at"
+  ]
+}

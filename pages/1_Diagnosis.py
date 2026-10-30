@@ -2,333 +2,241 @@
 Page 1 — Diagnosis
 ==================
 
-Upload a patient gene-expression CSV and receive a predicted disease,
-confidence score, probability distribution, SHAP explanation, and
-LIME explanation.
-
-This page reproduces the **exact** behaviour of the original single-file
-``app.py``, but delegates all heavy lifting to the ``core`` and
-``explainability`` packages.
+Upload patient gene expression data and receive disease prediction,
+confidence scores, probability distribution, and biomarker insights.
+Supports single-patient profiles and multi-sample donor profiles (e.g.,
+regional brain tissue or paired tumor/normal samples from the predictions folder).
 """
 
-import streamlit as st
+from __future__ import annotations
+
+import io
+from pathlib import Path
+import time
 import numpy as np
 import pandas as pd
+import streamlit as st
 
-from core.config import APP_CONFIG
-from core.pipeline import preprocess
-from core.predictor import load_artifacts, predict
-from core.validation import (
-    ValidationResult,
-    validate_dataframe,
-    validate_file_content,
+from core.disease_models import (
+    available_disease_models,
+    load_disease_model,
+    parse_expression_input,
+    predict_samples,
 )
-from explainability.shap_explainer import explain as shap_explain
-from explainability.lime_explainer import explain as lime_explain
-from utils.helpers import build_probability_dataframe, format_percentage
-from utils.uncertainty import (
-    build_uncertainty_result,
-    calculate_calibration_metrics,
-    ConfidenceLevel,
-)
-from reports.pdf_report import (
-    SampleInfo,
-    PredictionResult,
-    generate_diagnosis_report,
+from utils.theme import apply_theme
+
+st.set_page_config(
+    page_title="Multi-Disease Diagnosis | Patient Analysis",
+    page_icon="🩺",
+    layout="wide",
 )
 
-# ── Page header ─────────────────────────────────────────────────────────────
-st.title("🧬 Multi-Disease Diagnosis System")
+apply_theme()
+
+st.title("🩺 Patient Gene Expression Diagnosis")
 st.write(
-    "Gene Expression–Based Disease Prediction using "
-    "Hybrid Swarm Intelligence (PSO + ACO) and Deep Learning"
+    "Upload a patient's microarray gene expression profile to assess disease status "
+    "using trained binary models calibrated for clinical relevance."
 )
 st.markdown("---")
 
-# ── Load artefacts once ─────────────────────────────────────────────────────
-artifacts = load_artifacts()
+# ── Load available models ───────────────────────────────────────────────────
+models = available_disease_models()
+if not models:
+    st.error("No disease models found in `artifacts/disease_models/`. Please train them first.")
+    st.stop()
 
-# ── File upload ─────────────────────────────────────────────────────────────
-st.subheader("📤 Upload Patient Gene Expression Data")
+model_options = {m["slug"]: m for m in models}
+slug_list = list(model_options.keys())
 
+# Auto-detect disease from uploaded file name if already in session_state
+default_slug_idx = 0
+
+# ── File Upload ─────────────────────────────────────────────────────────────
+st.subheader("📤 Upload Patient Expression Data")
 uploaded_file = st.file_uploader(
-    "Upload a CSV file containing a single patient's gene expression values",
-    type=["csv"],
+    "Upload patient CSV (from `predictions/` or clinical export) or GEO Series Matrix (`.txt`, `.gz`)",
+    type=["csv", "txt", "gz"],
+    help="Accepts single-patient expression CSVs or multi-sample donor profiles (e.g., regional tissue profiles).",
 )
 
-
-# ── Helper: render validation status ────────────────────────────────────────
-def _render_validation_result(vr: ValidationResult) -> None:
-    """Display the validation checklist in the Streamlit UI."""
-
-    st.markdown("---")
-    st.subheader("🔍 Input Validation")
-
-    if vr.valid:
-        st.success("**✓ Dataset validated successfully**")
-    else:
-        st.error("**❌ Dataset validation failed**")
-
-    # Checklist items
-    checks = [
-        ("✓", "CSV readable", True),
-        (
-            "✓" if vr.feature_count == APP_CONFIG.total_features else "❌",
-            f"Expected feature structure detected ({vr.feature_count:,} of {APP_CONFIG.total_features:,} features)"
-            if vr.feature_count != APP_CONFIG.total_features
-            else "Expected feature structure detected",
-            vr.feature_count == APP_CONFIG.total_features,
-        ),
-        (
-            "✓" if vr.invalid_value_count == 0 else "❌",
-            "Numeric values verified"
-            if vr.invalid_value_count == 0
-            else f"Non-numeric / invalid values detected ({vr.invalid_value_count})",
-            vr.invalid_value_count == 0,
-        ),
-        (
-            "✓" if vr.missing_value_count == 0 else "❌",
-            "No missing values"
-            if vr.missing_value_count == 0
-            else f"Missing values detected ({vr.missing_value_count:,} cells)",
-            vr.missing_value_count == 0,
-        ),
-        (
-            "✓" if vr.invalid_value_count == 0 else "❌",
-            "No infinite values"
-            if vr.invalid_value_count == 0
-            else f"Infinite values detected ({vr.invalid_value_count})",
-            vr.invalid_value_count == 0,
-        ),
-        (
-            "✓" if vr.sample_count == 1 else "❌",
-            "Single sample compatible"
-            if vr.sample_count == 1
-            else f"Expected 1 sample, found {vr.sample_count}",
-            vr.sample_count == 1,
-        ),
-    ]
-
-    for icon, label, is_ok in checks:
-        if is_ok:
-            st.markdown(f"&nbsp;&nbsp;{icon} {label}")
-        else:
-            st.markdown(f"&nbsp;&nbsp;{icon} {label}")
-
-    if vr.valid:
-        st.markdown("&nbsp;&nbsp;✓ **Dataset ready for analysis**")
-
-    # Show errors
-    if vr.errors:
-        with st.expander("❌ Validation Errors", expanded=True):
-            for err in vr.errors:
-                st.error(err)
-
-    # Show warnings
-    if vr.warnings:
-        with st.expander("⚠️ Warnings"):
-            for warn in vr.warnings:
-                st.warning(warn)
-
-
-# ── Prediction & explanation ────────────────────────────────────────────────
 if uploaded_file is not None:
-    # ── Step 1: File readability check ──────────────────────────────────
-    raw_bytes = uploaded_file.getvalue()
-    file_ok, file_msg = validate_file_content(raw_bytes)
+    fname_lower = uploaded_file.name.lower()
+    for idx, slug in enumerate(slug_list):
+        if slug in fname_lower:
+            default_slug_idx = idx
+            break
 
-    if not file_ok:
-        st.markdown("---")
-        st.subheader("🔍 Input Validation")
-        st.error("**❌ Dataset validation failed**")
-        st.error(file_msg)
-        st.stop()
-
-    # ── Step 2: Parse CSV ───────────────────────────────────────────────
-    try:
-        uploaded_file.seek(0)
-        input_df = pd.read_csv(uploaded_file)
-    except Exception as exc:
-        st.markdown("---")
-        st.subheader("🔍 Input Validation")
-        st.error("**❌ Dataset validation failed**")
-        st.error(f"Failed to parse the CSV file: {exc}")
-        st.stop()
-
-    # ── Step 3: Full validation ─────────────────────────────────────────
-    vr = validate_dataframe(input_df, check_schema=True)
-    _render_validation_result(vr)
-
-    if not vr.valid:
-        st.stop()
-
-    # ── Step 4: Prediction pipeline ─────────────────────────────────────
-    st.markdown("---")
-    st.subheader("🔬 Prediction Result")
-
-    st.write("Uploaded Sample:")
-    st.dataframe(input_df)
-
-    # ── Preprocessing ───────────────────────────────────────────────
-    x_final = preprocess(input_df)
-
-    # ── Model prediction ────────────────────────────────────────────
-    probs = predict(artifacts, x_final)
-    pred_class = int(np.argmax(probs))
-    confidence = probs[pred_class]
-
-    disease_name = APP_CONFIG.disease_map[pred_class]
-
-    # ── Uncertainty analysis ────────────────────────────────────────
-    uncertainty = build_uncertainty_result(probs)
-
-    st.success(
-        f"🩺 **The model predicts {disease_name} as the "
-        f"highest-probability class.**"
+col_sel, col_info = st.columns([2, 3])
+with col_sel:
+    selected_slug = st.selectbox(
+        "Target Disease Model",
+        options=slug_list,
+        index=default_slug_idx,
+        format_func=lambda s: model_options[s]["disease"],
+        help="Select the disease classifier corresponding to this patient or test profile.",
     )
 
-    # Confidence metric cards
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric(
-        "Model Probability",
-        format_percentage(uncertainty.max_probability),
-    )
-    c2.metric(
-        "Confidence Level",
-        uncertainty.confidence_level.value,
-    )
-    c3.metric(
-        "Prediction Entropy",
-        f"{uncertainty.entropy:.3f} bits",
-        help="Shannon entropy of the probability distribution. "
-             "Lower = more certain.",
-    )
-    c4.metric(
-        "Normalised Entropy",
-        f"{uncertainty.normalised_entropy:.3f}",
-        help="Entropy scaled to [0, 1]. 0 = certain, 1 = uniform.",
+selected_model_info = model_options[selected_slug]
+with col_info:
+    st.info(
+        f"**Selected Model:** {selected_model_info['disease']}  \n"
+        f"**Cohort:** {selected_model_info['study']} | **Held-out Accuracy:** {selected_model_info['test_accuracy']*100:.1f}% | "
+        f"**Biomarkers:** {selected_model_info['selected_biomarker_count']} probes | **Classifier:** {selected_model_info['selected_classifier']}"
     )
 
-    # Low-confidence warning
-    if uncertainty.is_low_confidence:
-        st.warning(uncertainty.warning_message)
-    elif not uncertainty.probability_valid:
-        st.warning(uncertainty.warning_message)
+if uploaded_file is None:
+    st.info("👆 Please upload a patient CSV or GEO Series Matrix to run diagnosis.")
+    st.stop()
 
-    # ── Probability table ───────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("📊 Disease Probability Distribution")
-
-    prob_df = build_probability_dataframe(probs, APP_CONFIG.class_names)
-    st.dataframe(prob_df)
-
-    # ── SHAP explanation ────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("🧠 SHAP Explanation (Why this disease?)")
-
-    shap_values, fig_shap = shap_explain(x_final, pred_class, artifacts)
-    st.pyplot(fig_shap)
-
-    # ── LIME explanation ────────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("🧪 LIME Explanation (Local Interpretability)")
-
-    _, fig_lime = lime_explain(x_final, pred_class, artifacts)
-    st.pyplot(fig_lime)
-
-    # ── PDF Report Generation ────────────────────────────────────────
-    st.markdown("---")
-    st.subheader("📄 Generate PDF Report")
-    st.write(
-        "Download a comprehensive PDF report containing the prediction, "
-        "probability distribution, SHAP/LIME explanations, top biomarkers, "
-        "and uncertainty analysis."
-    )
-
-    if st.button("📥 Generate PDF Report", key="generate_pdf"):
-        with st.spinner("Generating PDF report…"):
-            sample_info = SampleInfo(
-                sample_id=uploaded_file.name.replace(".csv", ""),
-                n_input_features=APP_CONFIG.total_features,
-                n_selected_features=APP_CONFIG.selected_features,
-            )
-            pred_result = PredictionResult(
-                predicted_disease=disease_name,
-                predicted_class=pred_class,
-                probabilities=probs,
-                class_names=APP_CONFIG.class_names,
-            )
-
-            pdf_bytes = generate_diagnosis_report(
-                sample_info=sample_info,
-                prediction=pred_result,
-                probabilities=probs,
-                shap_image=fig_shap,
-                lime_image=fig_lime,
-                shap_values=shap_values,
-                uncertainty=uncertainty,
-            )
-
-            st.download_button(
-                label="📥 Download PDF Report",
-                data=pdf_bytes,
-                file_name=f"diagnosis_report_{sample_info.sample_id}.pdf",
-                mime="application/pdf",
-            )
-            st.success("PDF report generated successfully.")
-
-    # ── Calibration analysis (if available) ──────────────────────────
-    cal = calculate_calibration_metrics()
-    if cal is not None:
-        st.markdown("---")
-        st.subheader("📏 Model Calibration (Evaluation Set)")
-        st.caption(
-            "These metrics are computed on the held-out evaluation dataset "
-            "(550 samples) and describe how well the model's confidence "
-            "aligns with actual accuracy."
-        )
-
-        mc1, mc2 = st.columns(2)
-        mc1.metric(
-            "Brier Score",
-            f"{cal.brier_score:.4f}",
-            help="Mean squared error between predicted probabilities and "
-                 "actual outcomes. 0 = perfect, lower is better.",
-        )
-        mc2.metric(
-            "Expected Calibration Error (ECE)",
-            f"{cal.ece:.4f}",
-            help="Weighted average of |accuracy − confidence| per bin. "
-                 "0 = perfectly calibrated.",
-        )
-
-        # Reliability diagram data
-        with st.expander("Reliability Diagram Data"):
-            cal_df = pd.DataFrame(cal.bin_data)
-            cal_df.columns = [
-                "Bin Lower", "Bin Upper",
-                "Mean Confidence", "Mean Accuracy", "Count",
-            ]
-            st.dataframe(cal_df, use_container_width=True)
-
-            st.caption(
-                "In a perfectly calibrated model, Mean Confidence ≈ Mean "
-                "Accuracy in every bin."
-            )
-
-    # ── Research disclaimer ──────────────────────────────────────────
-    st.markdown("---")
-    st.warning(
-        "**⚕️ Research Disclaimer:** This system is a research prototype "
-        "for gene-expression-based disease classification.  The confidence "
-        "scores shown are model-internal probabilities and have NOT been "
-        "clinically validated.  They should NOT be used for medical "
-        "diagnosis, treatment decisions, or as a substitute for professional "
-        "medical advice."
-    )
-
-# ── Footer ──────────────────────────────────────────────────────────────────
+# ── Parse and Validate Input ────────────────────────────────────────────────
 st.markdown("---")
-st.caption(
-    "Final Year Project | Hybrid PSO–ACO + Deep Learning | Gene Expression Analysis"
+st.subheader("🔍 Input Parsing & Validation")
+
+with st.status("🧬 Analyzing Patient Expression Profile...", expanded=True) as status_box:
+    st.write("📥 Ingesting and parsing expression matrix...")
+    time.sleep(0.2)
+    try:
+        file_bytes = uploaded_file.getvalue()
+        df_input, sample_labels = parse_expression_input(file_bytes, uploaded_file.name)
+        model, expected_features, info = load_disease_model(selected_slug)
+    except Exception as exc:
+        status_box.update(label="❌ File Parsing Failed", state="error", expanded=True)
+        st.error(f"❌ Failed to parse uploaded file: {exc}")
+        st.stop()
+
+    n_samples = df_input.shape[0]
+    n_cols = df_input.shape[1]
+    expected_count = len(expected_features)
+
+    # Check overlap of features
+    input_features = set(str(c).strip('"\'') for c in df_input.columns)
+    expected_set = set(expected_features)
+    shared_features = input_features.intersection(expected_set)
+    overlap_pct = (len(shared_features) / expected_count) * 100
+
+    st.write(f"🔬 Validating probe schema ({len(shared_features):,} of {expected_count:,} features matched)...")
+    time.sleep(0.2)
+
+    if overlap_pct < 50.0:
+        status_box.update(label="❌ Feature Schema Mismatch", state="error", expanded=True)
+        st.error(
+            f"❌ Feature Schema Mismatch: The uploaded file only matches {overlap_pct:.1f}% of the required probes "
+            f"for {info.get('disease_name', selected_slug)}. Please ensure you selected the correct disease model."
+        )
+        st.stop()
+
+    st.write(f"⚙️ Running calibrated inference ({info.get('selected_classifier', 'Ensemble ML')})...")
+    time.sleep(0.2)
+
+    try:
+        preds, probs, selected_probes = predict_samples(model, expected_features, df_input)
+    except Exception as exc:
+        status_box.update(label="❌ Inference Error", state="error", expanded=True)
+        st.error(f"❌ Prediction error: {exc}")
+        st.stop()
+
+    status_box.update(
+        label=f"✅ Diagnostic Pipeline Complete ({n_samples} sample{'s' if n_samples > 1 else ''} evaluated)",
+        state="complete",
+        expanded=False,
+    )
+
+v_col1, v_col2, v_col3 = st.columns(3)
+with v_col1:
+    st.metric("Patient Samples Detected", n_samples)
+with v_col2:
+    st.metric("Total Probes in Input", f"{n_cols:,}")
+with v_col3:
+    st.metric("Feature Schema Alignment", f"{overlap_pct:.1f}%", help=f"{len(shared_features):,} of {expected_count:,} model probes present")
+
+st.markdown("---")
+st.subheader("📋 Diagnostic Results")
+
+disease_name = info.get("disease_name", info.get("disease", selected_slug))
+
+if n_samples == 1:
+    # Single sample view
+    pred = preds[0]
+    prob_disease = probs[0, 1]
+    prob_control = probs[0, 0]
+    confidence = max(prob_disease, prob_control)
+
+    res_col1, res_col2 = st.columns([3, 2])
+    with res_col1:
+        if pred == 1:
+            st.error(f"### ⚠️ Diagnosis: **{disease_name} (Positive)**")
+            st.write(f"The model classified this profile as positive for **{disease_name}** with **{prob_disease*100:.1f}%** probability.")
+        else:
+            st.success(f"### ✅ Diagnosis: **Control / Non-Diseased (Negative)**")
+            st.write(f"The model classified this profile as **Control / Normal** with **{prob_control*100:.1f}%** probability.")
+
+    with res_col2:
+        st.metric("Model Confidence", f"{confidence*100:.1f}%")
+        st.progress(float(prob_disease), text=f"Disease Risk Score: {prob_disease*100:.1f}%")
+
+    # Probability Distribution Table
+    prob_df = pd.DataFrame({
+        "Condition": ["Study Control / Healthy", disease_name],
+        "Probability": [f"{prob_control*100:.2f}%", f"{prob_disease*100:.2f}%"],
+        "Score": [prob_control, prob_disease]
+    })
+    st.dataframe(prob_df[["Condition", "Probability"]], use_container_width=True, hide_index=True)
+
+else:
+    # Multi-sample donor/patient view (e.g. 4 regional brain samples or paired normal/tumor)
+    n_positive = int(np.sum(preds == 1))
+    st.info(f"📁 **Multi-Sample Profile Analysis**: {n_samples} samples evaluated ({n_positive} positive for {disease_name}, {n_samples - n_positive} control).")
+
+    summary_rows = []
+    for idx, sid in enumerate(sample_labels):
+        p_lbl = "Disease (Positive)" if preds[idx] == 1 else "Control (Normal)"
+        summary_rows.append({
+            "Sample ID": sid,
+            "Predicted Condition": p_lbl,
+            "Disease Probability": f"{probs[idx, 1]*100:.1f}%",
+            "Control Probability": f"{probs[idx, 0]*100:.1f}%",
+            "Risk Score": probs[idx, 1],
+        })
+
+    summary_df = pd.DataFrame(summary_rows)
+    st.dataframe(summary_df.drop(columns=["Risk Score"]), use_container_width=True, hide_index=True)
+
+    # Detailed inspector for specific sample
+    selected_sample_idx = st.selectbox(
+        "Inspect Individual Sample Details",
+        range(n_samples),
+        format_func=lambda i: f"{sample_labels[i]} — {summary_rows[i]['Predicted Condition']} ({summary_rows[i]['Disease Probability']})",
+    )
+    st.write(f"Detailed view for **{sample_labels[selected_sample_idx]}**:")
+    s_prob_dis = probs[selected_sample_idx, 1]
+    st.progress(float(s_prob_dis), text=f"Disease Probability: {s_prob_dis*100:.1f}%")
+
+# ── Biomarker Expression Table ──────────────────────────────────────────────
+if selected_probes:
+    with st.expander(f"🧬 Selected Informative Biomarkers ({len(selected_probes)} probes)"):
+        st.write(
+            f"The following probes were selected by the model's feature selection pipeline "
+            f"as key differentiators for **{disease_name}**:"
+        )
+        bio_df = df_input.reindex(columns=selected_probes[:20]).T
+        bio_df.columns = sample_labels[:len(bio_df.columns)]
+        st.dataframe(bio_df, use_container_width=True)
+
+# ── Download Report ─────────────────────────────────────────────────────────
+report_df = pd.DataFrame({
+    "Sample_ID": sample_labels,
+    "Target_Disease": [disease_name] * n_samples,
+    "Prediction": ["Disease (1)" if p == 1 else "Control (0)" for p in preds],
+    "Disease_Probability": probs[:, 1],
+    "Control_Probability": probs[:, 0],
+})
+csv_buffer = io.StringIO()
+report_df.to_csv(csv_buffer, index=False)
+
+st.download_button(
+    label="📥 Download Diagnostic Report (CSV)",
+    data=csv_buffer.getvalue(),
+    file_name=f"diagnostic_report_{selected_slug}.csv",
+    mime="text/csv",
 )

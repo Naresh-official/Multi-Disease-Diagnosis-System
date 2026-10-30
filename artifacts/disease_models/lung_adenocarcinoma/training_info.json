@@ -1,0 +1,77 @@
+{
+  "disease_slug": "lung_adenocarcinoma",
+  "disease_name": "Lung Adenocarcinoma",
+  "study": "GSE75037",
+  "total_samples": 162,
+  "train_samples": 112,
+  "test_samples": 50,
+  "train_split_percentage": 69.14,
+  "test_split_percentage": 30.86,
+  "total_probe_features": 48803,
+  "selected_biomarker_count": 100,
+  "selected_classifier": "LogisticRegression",
+  "test_accuracy": 0.9,
+  "test_macro_f1": 0.9,
+  "test_balanced_accuracy": 0.9,
+  "test_precision": 0.9006,
+  "test_recall": 0.9,
+  "confusion_matrix": [
+    [
+      22,
+      3
+    ],
+    [
+      2,
+      23
+    ]
+  ],
+  "classification_report": {
+    "Control": {
+      "precision": 0.9166666666666666,
+      "recall": 0.88,
+      "f1-score": 0.8979591836734694,
+      "support": 25.0
+    },
+    "Disease": {
+      "precision": 0.8846153846153846,
+      "recall": 0.92,
+      "f1-score": 0.9019607843137255,
+      "support": 25.0
+    },
+    "accuracy": 0.9,
+    "macro avg": {
+      "precision": 0.9006410256410255,
+      "recall": 0.9,
+      "f1-score": 0.8999599839935974,
+      "support": 50.0
+    },
+    "weighted avg": {
+      "precision": 0.9006410256410255,
+      "recall": 0.9,
+      "f1-score": 0.8999599839935974,
+      "support": 50.0
+    }
+  },
+  "top_biomarkers": [
+    "ILMN_1653494",
+    "ILMN_1653871",
+    "ILMN_1653878",
+    "ILMN_1657009",
+    "ILMN_1659462",
+    "ILMN_1662362",
+    "ILMN_1665033",
+    "ILMN_1665761",
+    "ILMN_1672149",
+    "ILMN_1673642",
+    "ILMN_1674893",
+    "ILMN_1677997",
+    "ILMN_1679152",
+    "ILMN_1679694",
+    "ILMN_1680770",
+    "ILMN_1683658",
+    "ILMN_1686846",
+    "ILMN_1689624",
+    "ILMN_1691572",
+    "ILMN_1693102"
+  ]
+}

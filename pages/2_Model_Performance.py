@@ -2,16 +2,8 @@
 Page 2 — Model Performance
 ==========================
 
-Evaluate the trained DNN classifier on data parsed from the GEO
-Series Matrix files.  Displays aggregate metrics, per-class
-breakdown, confusion matrix, ROC curves, PR curves, and a
-performance bar chart.
-
-⚠️  Important limitation
-    The evaluation dataset is constructed from the same GEO files
-    used to train the model.  No separate held-out test set was
-    provided.  The metrics reported here therefore reflect in-sample
-    performance and should not be interpreted as true generalisation.
+Performance metrics and evaluation breakdown for the 5 disease-specific
+models trained on the 70-30 train-test split.
 """
 
 from __future__ import annotations
@@ -19,204 +11,170 @@ from __future__ import annotations
 import streamlit as st
 import numpy as np
 import pandas as pd
-
-from core.config import APP_CONFIG
-from evaluation.evaluator import (
-    load_saved_results,
-    run_evaluation,
-    save_results,
-)
-from evaluation.plots import (
-    plot_confusion_matrix,
-    plot_precision_recall_curves,
-    plot_per_class_performance,
-    plot_roc_curves,
-)
-
-# ── Page config ─────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Model Performance", page_icon="📈", layout="wide")
-st.title("📈 Model Performance")
-st.write("Comprehensive evaluation of the Hybrid PSO + ACO + DNN classifier.")
-
-# ── Limitation banner ───────────────────────────────────────────────────────
-st.warning(
-    "⚠️ **Data limitation:** The evaluation data is constructed from the same "
-    "GEO Series Matrix files used to train the model.  No independent held-out "
-    "test set was provided.  These metrics reflect **in-sample performance** and "
-    "may overestimate true generalisation."
-)
-
-# ── Load or compute results ─────────────────────────────────────────────────
-@st.cache_data(show_spinner="Running model evaluation…", hash_funcs={pd.DataFrame: lambda df: hash(df.shape)})
-def _get_results() -> dict:
-    results = run_evaluation()
-    save_results(results)
-    return results
-
-try:
-    results = _get_results()
-except Exception as e:
-    st.error(f"Failed to run evaluation: {e}")
-    st.stop()
-
-metrics = results["metrics"]
-per_class = results["per_class"]
-cm = results["cm"]
-y_true = results["y_true"]
-y_prob = results["y_prob"]
-class_names = results["class_names"]
-
-# ── Dataset summary ─────────────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("📋 Dataset Summary")
-
-col_a, col_b, col_c, col_d = st.columns(4)
-col_a.metric("Total Samples", f"{results['n_samples']:,}")
-col_b.metric("Raw Features", f"{results['n_features_raw']:,}")
-col_c.metric("Selected Features", results["n_features_final"])
-col_d.metric("Disease Classes", len(class_names))
-
-# Per-class sample counts
-with st.expander("Per-class sample counts"):
-    class_counts_df = pd.DataFrame([
-        {"Disease": class_names[i], "Samples": results["n_per_class"].get(i, 0)}
-        for i in range(len(class_names))
-    ])
-    st.dataframe(class_counts_df, use_container_width=True, hide_index=True)
-
-# ── Top-level metric cards ──────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("🎯 Aggregate Metrics")
-
-m1, m2, m3, m4 = st.columns(4)
-
-accuracy = metrics["accuracy"]
-f1_macro = metrics["f1_macro"]
-f1_weighted = metrics["f1_weighted"]
-roc_auc = metrics.get("roc_auc_ovr")
-
-m1.metric("Accuracy", f"{accuracy:.4f}", help="Overall fraction of correct predictions")
-m2.metric("Macro F1", f"{f1_macro:.4f}", help="Unweighted mean of per-class F1 scores — treats all classes equally")
-m3.metric("Weighted F1", f"{f1_weighted:.4f}", help="F1 weighted by class support — reflects class imbalance")
-m4.metric(
-    "ROC-AUC (OvR)",
-    f"{roc_auc:.4f}" if roc_auc is not None else "N/A",
-    help="Macro-average One-vs-Rest ROC-AUC",
-)
-
-# Additional detail
-with st.expander("Detailed aggregate metrics"):
-    detail_df = pd.DataFrame([
-        {"Metric": "Accuracy", "Value": f"{metrics['accuracy']:.4f}"},
-        {"Metric": "Precision (macro)", "Value": f"{metrics['precision_macro']:.4f}"},
-        {"Metric": "Recall (macro)", "Value": f"{metrics['recall_macro']:.4f}"},
-        {"Metric": "F1 (macro)", "Value": f"{metrics['f1_macro']:.4f}"},
-        {"Metric": "F1 (weighted)", "Value": f"{metrics['f1_weighted']:.4f}"},
-        {"Metric": "ROC-AUC (OvR, macro)", "Value": f"{metrics['roc_auc_ovr']:.4f}" if metrics.get("roc_auc_ovr") else "N/A"},
-    ])
-    st.dataframe(detail_df, use_container_width=True, hide_index=True)
-
-# ── Classification performance table ────────────────────────────────────────
-st.markdown("---")
-st.subheader("📊 Classification Performance")
-
-perf_df = pd.DataFrame([
-    {
-        "Disease": m["class_name"],
-        "Precision": f"{m['precision']:.4f}",
-        "Recall": f"{m['recall']:.4f}",
-        "F1-Score": f"{m['f1']:.4f}",
-        "AUC": f"{m['auc']:.4f}" if m["auc"] is not None else "N/A",
-        "Support": m["support"],
-    }
-    for m in per_class
-])
-
-st.dataframe(perf_df, use_container_width=True, hide_index=True)
-
-st.caption(
-    "Macro averages — Precision: "
-    f"{metrics['precision_macro']:.4f},  "
-    "Recall: "
-    f"{metrics['recall_macro']:.4f},  "
-    "F1: "
-    f"{metrics['f1_macro']:.4f}"
-)
-
-# ── Confusion matrix ────────────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("🔢 Confusion Matrix")
-
-fig_cm = plot_confusion_matrix(cm, class_names)
-st.plotly_chart(fig_cm, use_container_width=True)
-
-# Raw counts
-with st.expander("Raw confusion matrix counts"):
-    cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
-    st.dataframe(cm_df, use_container_width=True)
-
-# ── ROC curves ──────────────────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("📉 ROC Curves")
-
-fig_roc = plot_roc_curves(y_true, y_prob, class_names)
-st.plotly_chart(fig_roc, use_container_width=True)
-
-# ── Precision-Recall curves ─────────────────────────────────────────────────
-st.markdown("---")
-st.subheader("📈 Precision-Recall Curves")
-
-fig_pr = plot_precision_recall_curves(y_true, y_prob, class_names)
-st.plotly_chart(fig_pr, use_container_width=True)
-
-# ── Per-class performance bar chart ─────────────────────────────────────────
-st.markdown("---")
-st.subheader("📊 Class-wise Performance")
-
-fig_bar = plot_per_class_performance(per_class)
-st.plotly_chart(fig_bar, use_container_width=True)
-
-# ── Prediction confidence distribution ──────────────────────────────────────
-st.markdown("---")
-st.subheader("📊 Prediction Confidence Distribution")
-
-pred_conf = np.max(y_prob, axis=1)
-correct_mask = y_true == np.argmax(y_prob, axis=1)
-
+import plotly.express as px
 import plotly.graph_objects as go
 
-fig_conf = go.Figure()
-fig_conf.add_trace(go.Histogram(
-    x=pred_conf[correct_mask],
-    name="Correct predictions",
-    opacity=0.7,
-    marker_color="#2ca02c",
-    nbinsx=30,
-))
-fig_conf.add_trace(go.Histogram(
-    x=pred_conf[~correct_mask],
-    name="Incorrect predictions",
-    opacity=0.7,
-    marker_color="#d62728",
-    nbinsx=30,
-))
-fig_conf.update_layout(
-    barmode="overlay",
-    xaxis_title="Prediction Confidence",
-    yaxis_title="Count",
-    height=400,
-)
-st.plotly_chart(fig_conf, use_container_width=True)
+from core.disease_models import available_disease_models
+from utils.theme import apply_theme, is_dark_theme
 
-st.caption(
-    f"Median confidence: {np.median(pred_conf):.4f} | "
-    f"Mean confidence: {np.mean(pred_conf):.4f}"
+st.set_page_config(
+    page_title="Multi-Disease Diagnosis | Model Performance",
+    page_icon="📈",
+    layout="wide",
 )
 
-# ── Footer ──────────────────────────────────────────────────────────────────
+apply_theme()
+
+st.title("📈 Model Performance & Evaluation")
+st.write(
+    "Evaluation metrics on the **held-out 30% test split** for each disease-specific model. "
+    "All splits use group-aware stratification to eliminate patient/donor data leakage."
+)
 st.markdown("---")
-st.caption(
-    f"Model: Hybrid PSO–ACO + DNN | "
-    f"Evaluated on {results['n_samples']} samples from GEO datasets | "
-    f"In-sample metrics — see warning above"
+
+models = available_disease_models()
+if not models:
+    st.error("No trained disease models found in `artifacts/disease_models/`.")
+    st.stop()
+
+# ── Summary Table ───────────────────────────────────────────────────────────
+st.subheader("📊 Comparative Performance Summary (30% Held-Out Test Set)")
+
+table_rows = []
+for m in models:
+    table_rows.append({
+        "Disease": m["disease"],
+        "GEO Study": m["study"],
+        "Train Samples (70%)": m["train_samples"],
+        "Test Samples (30%)": m["test_samples"],
+        "Total Probes": f"{m['total_probe_features']:,}",
+        "Biomarkers Selected": m["selected_biomarker_count"],
+        "Classifier": m["selected_classifier"],
+        "Held-Out Accuracy": m["test_accuracy"],
+        "Macro F1": m["test_macro_f1"],
+        "Balanced Accuracy": m.get("test_balanced_accuracy", m["test_accuracy"]),
+    })
+
+summary_df = pd.DataFrame(table_rows)
+
+st.dataframe(
+    summary_df.style.format({
+        "Held-Out Accuracy": "{:.2%}",
+        "Macro F1": "{:.4f}",
+        "Balanced Accuracy": "{:.2%}",
+    }),
+    use_container_width=True,
+    hide_index=True,
 )
+
+# ── Performance Chart ───────────────────────────────────────────────────────
+st.markdown("---")
+st.subheader("📊 Performance Across Disease Models")
+
+chart_df = summary_df.copy()
+chart_df["Accuracy (%)"] = chart_df["Held-Out Accuracy"] * 100
+chart_df["Macro F1 (%)"] = chart_df["Macro F1"] * 100
+
+dark = is_dark_theme()
+font_color = "#f8fafc" if dark else "#0f172a"
+grid_color = "#334155" if dark else "#e2e8f0"
+
+fig = px.bar(
+    chart_df,
+    x="Disease",
+    y=["Accuracy (%)", "Macro F1 (%)"],
+    barmode="group",
+    title="Held-Out Accuracy and Macro F1 by Target Disease",
+    color_discrete_sequence=["#0f766e" if not dark else "#14b8a6", "#2563eb" if not dark else "#3b82f6"],
+    height=420,
+)
+fig.update_layout(
+    yaxis_range=[50, 100],
+    yaxis_title="Score (%)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(color=font_color),
+    xaxis=dict(gridcolor=grid_color),
+    yaxis=dict(gridcolor=grid_color),
+)
+st.plotly_chart(fig, use_container_width=True)
+
+# ── Disease-Specific Drilldown ──────────────────────────────────────────────
+st.markdown("---")
+st.subheader("🔍 Detailed Disease Breakdown")
+
+selected_slug = st.selectbox(
+    "Select Disease Model for In-Depth Evaluation",
+    options=[m["slug"] for m in models],
+    format_func=lambda s: next(m["disease"] for m in models if m["slug"] == s),
+)
+
+cur_model = next(m for m in models if m["slug"] == selected_slug)
+
+col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+col_m1.metric("Held-Out Accuracy", f"{cur_model['test_accuracy']*100:.2f}%")
+col_m2.metric("Macro F1", f"{cur_model['test_macro_f1']:.4f}")
+col_m3.metric("Balanced Accuracy", f"{cur_model.get('test_balanced_accuracy', 0)*100:.2f}%")
+col_m4.metric("Test Split Size", f"{cur_model['test_samples']} samples")
+
+d_col1, d_col2 = st.columns([1, 1])
+
+with d_col1:
+    st.write("#### Confusion Matrix")
+    cm = np.array(cur_model.get("confusion_matrix", [[0, 0], [0, 0]]))
+    labels = ["Control", "Disease"]
+
+    # Build annotations manually (compatible with Plotly 7+)
+    annotations = [
+        dict(
+            x=labels[j],
+            y=labels[i],
+            text=str(cm[i, j]),
+            font=dict(color="white" if cm[i, j] > cm.max() / 2 else "black", size=18),
+            showarrow=False,
+        )
+        for i in range(len(labels))
+        for j in range(len(labels))
+    ]
+
+    fig_cm = go.Figure(
+        data=go.Heatmap(
+            z=cm,
+            x=labels,
+            y=labels,
+            colorscale="Blues",
+            showscale=False,
+        )
+    )
+    fig_cm.update_layout(
+        annotations=annotations,
+        xaxis=dict(title="Predicted Label", side="bottom"),
+        yaxis=dict(title="True Label", autorange="reversed"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=font_color),
+        height=320,
+        margin=dict(l=40, r=40, t=40, b=40),
+    )
+    st.plotly_chart(fig_cm, use_container_width=True)
+
+with d_col2:
+    st.write("#### Classification Report")
+    cr = cur_model.get("classification_report", {})
+    if cr:
+        cr_df = pd.DataFrame(cr).T
+        cr_display = cr_df.loc[["Control", "Disease"]][["precision", "recall", "f1-score", "support"]]
+        st.dataframe(
+            cr_display.style.format({
+                "precision": "{:.3f}",
+                "recall": "{:.3f}",
+                "f1-score": "{:.3f}",
+                "support": "{:.0f}",
+            }),
+            use_container_width=True,
+        )
+
+    st.write(f"**Top Ranked Biomarker Probes ({len(cur_model.get('top_biomarkers', []))})**")
+    top_probes = cur_model.get("top_biomarkers", [])
+    if top_probes:
+        st.caption(", ".join(top_probes[:15]) + ("..." if len(top_probes) > 15 else ""))

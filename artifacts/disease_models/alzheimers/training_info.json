@@ -1,0 +1,77 @@
+{
+  "disease_slug": "alzheimers",
+  "disease_name": "Alzheimer's Disease",
+  "study": "GSE48350",
+  "total_samples": 247,
+  "train_samples": 172,
+  "test_samples": 75,
+  "train_split_percentage": 69.64,
+  "test_split_percentage": 30.36,
+  "total_probe_features": 54675,
+  "selected_biomarker_count": 150,
+  "selected_classifier": "LogisticRegression",
+  "test_accuracy": 0.8667,
+  "test_macro_f1": 0.8295,
+  "test_balanced_accuracy": 0.8069,
+  "test_precision": 0.8722,
+  "test_recall": 0.8069,
+  "confusion_matrix": [
+    [
+      50,
+      2
+    ],
+    [
+      8,
+      15
+    ]
+  ],
+  "classification_report": {
+    "Control": {
+      "precision": 0.8620689655172413,
+      "recall": 0.9615384615384616,
+      "f1-score": 0.9090909090909091,
+      "support": 52.0
+    },
+    "Disease": {
+      "precision": 0.8823529411764706,
+      "recall": 0.6521739130434783,
+      "f1-score": 0.75,
+      "support": 23.0
+    },
+    "accuracy": 0.8666666666666667,
+    "macro avg": {
+      "precision": 0.8722109533468559,
+      "recall": 0.8068561872909699,
+      "f1-score": 0.8295454545454546,
+      "support": 75.0
+    },
+    "weighted avg": {
+      "precision": 0.8682893847194049,
+      "recall": 0.8666666666666667,
+      "f1-score": 0.8603030303030305,
+      "support": 75.0
+    }
+  },
+  "top_biomarkers": [
+    "1552426_a_at",
+    "1552735_at",
+    "1554618_at",
+    "1556151_at",
+    "1560703_at",
+    "1561545_at",
+    "1562906_at",
+    "1569269_s_at",
+    "200053_at",
+    "200060_s_at",
+    "200639_s_at",
+    "200786_at",
+    "200792_at",
+    "200793_s_at",
+    "201082_s_at",
+    "201125_s_at",
+    "201253_s_at",
+    "201323_at",
+    "201864_at",
+    "201938_at"
+  ]
+}
